@@ -1,0 +1,72 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Event {
+  id Int @id @default(autoincrement())
+  name String
+  description String?
+  startTime DateTime
+  endTime DateTime
+  createdBy String //walletId of creator
+  blockAddress String? //blockchain address of the event
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  candidates Candidate[]
+  votes Vote[]
+}
+
+model Candidate {
+  id Int @id @default(autoincrement())
+  name String
+  eventId Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  event Event @relation(fields: [eventId], references: [id])
+  votes Vote[]
+}
+
+model Voter {
+  id Int @id @default(autoincrement())
+  name String
+  walletId String @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  votes Vote[]
+}
+
+model Vote {
+  id Int @id @default(autoincrement())
+  voterId Int
+  eventId Int
+  candidateId Int
+  blockAddress String? //blockchain tx address
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  voter Voter @relation(fields: [voterId], references: [id])
+  event Event @relation(fields: [eventId], references: [id])
+  candidate Candidate @relation(fields: [candidateId], references: [id])
+
+  @@unique([voterId, eventId]) // voter can vote only once per event
+}
