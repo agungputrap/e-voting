@@ -1,13 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@/app/generated/prisma/client";
+import { extractTokenFromRequest, verifyToken } from "@/app/lib/auth";
 
 const prisma = new PrismaClient();
 
 // GET /api/events/[id] - Get event by ID
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, context: { params: Promise<{ id: string}> }) {
     try {
+        // Await the params since it's a Promise in Next.js 15+
+        const params = await context.params;
+        const { id } = params;
+        
+        // Validate that id exists and is a valid number
+        if (!id) {
+            return NextResponse.json({
+                success: false,
+                error: 'Event ID is required',
+            }, { status: 400 });
+        }
+
+        const eventId = Number(id);
+        if (isNaN(eventId) || eventId <= 0) {
+            return NextResponse.json({
+                success: false,
+                error: 'Invalid event ID format',
+            }, { status: 400 });
+        }
+
         const event = await prisma.event.findUnique({
-            where: { id: Number(params.id) },
+            where: { id: eventId },
             include: {
                 candidates: true,
                 votes: {
@@ -39,8 +60,40 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 // PUT /api/events/[id] - Update event by ID
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, context: { params: Promise<{ id: string }> }) {
     try {
+        // Authenticate user first
+        const token = extractTokenFromRequest(request);
+        if (!token) {
+            return NextResponse.json({
+                success: false,
+                error: 'Authentication required'
+            }, { status: 401 });
+        }
+
+        const user = await verifyToken(token);
+        
+        // Await the params since it's a Promise in Next.js 15+
+        const params = await context.params;
+        const { id } = params;
+        
+        // Validate that id exists
+        if (!id) {
+            return NextResponse.json({
+                success: false,
+                error: 'Event ID is required',
+            }, { status: 400 });
+        }
+
+        // Validate event ID
+        const eventId = Number(id);
+        if (isNaN(eventId) || eventId <= 0) {
+            return NextResponse.json({
+                success: false,
+                error: 'Invalid event ID format',
+            }, { status: 400 });
+        }
+
         const body = await request.json();
         const {
             name,
@@ -52,15 +105,6 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
             isActive
         } = body;
 
-        // Validate event ID
-        const eventId = Number(params.id);
-        if (isNaN(eventId)) {
-            return NextResponse.json({
-                success: false,
-                error: 'Invalid event ID',
-            }, { status: 400 });
-        }
-
         // check if event exists
         const existingEvent = await prisma.event.findUnique({
             where: { id: eventId }
@@ -71,6 +115,14 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
                 { success: false, error: 'Event not found' },
                 { status: 404 }
             );
+        }
+
+        // Check if the authenticated user is the creator of the event
+        if (existingEvent.createdBy !== user.walletId) {
+            return NextResponse.json({
+                success: false,
+                error: 'Only the event creator can update this event'
+            }, { status: 403 });
         }
 
         const updateData: any = {};
@@ -130,10 +182,63 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+// DELETE /api/events/[id] - Delete event by ID
+export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
     try {
+        // Authenticate user first
+        const token = extractTokenFromRequest(request);
+        if (!token) {
+            return NextResponse.json({
+                success: false,
+                error: 'Authentication required'
+            }, { status: 401 });
+        }
+
+        const user = await verifyToken(token);
+        
+        // Await the params since it's a Promise in Next.js 15+
+        const params = await context.params;
+        const { id } = params;
+        
+        // Validate that id exists
+        if (!id) {
+            return NextResponse.json({
+                success: false,
+                error: 'Event ID is required',
+            }, { status: 400 });
+        }
+
+        // Validate event ID
+        const eventId = Number(id);
+        if (isNaN(eventId) || eventId <= 0) {
+            return NextResponse.json({
+                success: false,
+                error: 'Invalid event ID format',
+            }, { status: 400 });
+        }
+
+        // Check if event exists and validate creator
+        const existingEvent = await prisma.event.findUnique({
+            where: { id: eventId }
+        });
+
+        if (!existingEvent) {
+            return NextResponse.json({
+                success: false,
+                error: 'Event not found'
+            }, { status: 404 });
+        }
+
+        // Check if the authenticated user is the creator of the event
+        if (existingEvent.createdBy !== user.walletId) {
+            return NextResponse.json({
+                success: false,
+                error: 'Only the event creator can delete this event'
+            }, { status: 403 });
+        }
+
         await prisma.event.delete({
-            where: { id: Number(params.id) },
+            where: { id: eventId },
         });
 
         return NextResponse.json({
@@ -141,6 +246,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
             message: 'Event deleted successfully',
         });
     } catch (error) {
+        console.error('Error deleting event:', error);
         return NextResponse.json({
             success: false,
             error: 'Failed to delete event'

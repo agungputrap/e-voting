@@ -47,6 +47,8 @@ model Voter {
   id Int @id @default(autoincrement())
   name String
   walletId String @unique
+  nonce String?
+  lastLogin DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -69,4 +71,16 @@ model Vote {
   candidate Candidate @relation(fields: [candidateId], references: [id])
 
   @@unique([voterId, eventId]) // voter can vote only once per event
+}
+
+model TokenBlacklist {
+  id Int @id @default(autoincrement())
+  token String @unique
+  jti String? // JWT ID for more efficient lookups
+  userId Int
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@index([expiresAt])
 }
