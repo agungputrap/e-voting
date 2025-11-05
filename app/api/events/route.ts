@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@/app/generated/prisma/client";
+import { withAuth } from "@/app/lib/middleware";
+import { JWTPayload } from "@/app/lib/auth";
 
 const prisma = new PrismaClient();
 
-// GET /api/events - Get all events
-export async function GET() {
+// GET /api/events - Get all events (Protected)
+async function getEvents(request: NextRequest, user: JWTPayload) {
     try {
         const events = await prisma.event.findMany({
             include: {
@@ -15,28 +17,30 @@ export async function GET() {
         return NextResponse.json({
             success: true,
             data: events,
+            user: {
+                id: user.userId,
+                walletId: user.walletId
+            }
         });
     } catch (error) {
         return NextResponse.json({
             success: false,
             error: "Failed to fetch events",
-        }, { status: 500 }
-        );
+        }, { status: 500 });
     }
 }
 
-// POST /api/events - Create new event
-export async function POST(request: NextRequest) {
+// POST /api/events - Create new event (Protected)
+async function createEvent(request: NextRequest, user: JWTPayload) {
     try {
         const body = await request.json();
-        const { name, description, startTime, endTime, createdBy, blockAddress, isActive = true } = body;
-
+        const { name, description, startTime, endTime, blockAddress, isActive = true } = body;
 
         // Validate required fields
-        if (!name || !description || !startTime || !endTime || !createdBy || !blockAddress) {
+        if (!name || !description || !startTime || !endTime) {
             return NextResponse.json({
                 success: false,
-                error: 'Missing required fields, name, startTime, endTime, createdBy',
+                error: 'Missing required fields: name, description, startTime, endTime',
             }, { status: 400 });
         }
 
@@ -46,7 +50,7 @@ export async function POST(request: NextRequest) {
         if (isNaN(startDateTime.getTime()) || isNaN(endDateTime.getTime())) {
             return NextResponse.json({
                 success: false,
-                error: 'Invalid datetime format to startTime or endTime',
+                error: 'Invalid datetime format for startTime or endTime',
             }, { status: 400 });
         }
         if (endDateTime <= startDateTime) {
@@ -62,8 +66,8 @@ export async function POST(request: NextRequest) {
                 description,
                 startTime: startDateTime,
                 endTime: endDateTime,
-                createdBy,
-                blockAddress,
+                createdBy: user.walletId, // Use authenticated user's walletId
+                blockAddress: blockAddress || null,
                 isActive,
             },
         });
@@ -71,6 +75,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
             success: true,
             data: event,
+            createdBy: user.walletId
         }, { status: 201 });
     } catch (error) {
         console.log('Error creating event:', error);
@@ -80,3 +85,7 @@ export async function POST(request: NextRequest) {
         }, { status: 500 });
     }
 }
+
+// Export protected routes
+export const GET = withAuth(getEvents);
+export const POST = withAuth(createEvent);
