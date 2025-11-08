@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '../../generated/prisma/client';
+import { PrismaClient } from '@prisma/client';
 import { verifyToken, extractTokenFromRequest } from '../../lib/auth';
 
 const prisma = new PrismaClient();
