@@ -44,17 +44,17 @@ async function main() {
   console.log("─────────────────────────");
 
   // Edit recipient address dan amount di sini
-  const SINGLE_RECIPIENT = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"; // Ganti dengan address voter
+  const SINGLE_RECIPIENT = "0xf9fd2A7f1c356b5B9987C2CDd86219B526c29998"; // Address untuk demo
   const SINGLE_AMOUNT = ethers.parseEther("100"); // 100 tokens
 
   console.log(`Recipient: ${SINGLE_RECIPIENT}`);
   console.log(`Amount: ${ethers.formatEther(SINGLE_AMOUNT)} tokens\n`);
 
-  // Uncomment baris di bawah untuk execute single mint
-  // const tx1 = await votingToken.mint(SINGLE_RECIPIENT, SINGLE_AMOUNT);
-  // console.log("⏳ Transaction sent:", tx1.hash);
-  // await tx1.wait();
-  // console.log("✅ Single mint successful!\n");
+  // Execute single mint
+  const tx1 = await votingToken.mint(SINGLE_RECIPIENT, SINGLE_AMOUNT);
+  console.log("⏳ Transaction sent:", tx1.hash);
+  await tx1.wait();
+  console.log("✅ Single mint successful!\n");
 
   // ============================================
   // OPTION 2: BATCH MINT (LEBIH EFISIEN)
