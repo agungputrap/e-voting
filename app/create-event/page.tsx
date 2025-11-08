@@ -383,8 +383,6 @@ export default function CreateVote() {
         description: `Event ID #${onChainResult.eventId} • tx ${onChainResult.txHash.slice(0, 10)}…`,
       });
 
-      router.push('/')
-
       // Create the event using the wallet auth token
       const eventResponse = await fetch("/api/events", {
         method: "POST",
@@ -461,6 +459,10 @@ export default function CreateVote() {
         setCandidateAvatar(null);
         setCandidates(defaultCandidates);
       }
+
+      // Navigate to home page AFTER all database operations are complete
+      router.push('/');
+      
     } catch (error) {
       console.error(error);
       handleValidationError(
