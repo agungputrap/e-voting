@@ -23,7 +23,9 @@ export function generateToken(payload: { userId: number; walletId: string}): str
             jti 
         },
         process.env.JWT_SECRET as string,
-        { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+        { 
+            expiresIn: process.env.JWT_EXPIRES_IN || '7d'
+        } as jwt.SignOptions
     );
 }
 
