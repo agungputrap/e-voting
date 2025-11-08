@@ -2,29 +2,27 @@ import ImageWithFallback from "@/app/_components/image-with-fallback";
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
 import {
-  ArrowRight,
-  BarChart3,
   CalendarClock,
   ChevronRight,
   ChevronsUp,
-  ChevronUp,
   CircleDollarSign,
   CircleUserRound,
-  Clock3,
   ClockAlert,
   Flame,
   Sparkles,
-  TimerIcon,
   Trophy,
   Users,
-  Wifi,
 } from "lucide-react";
 
 import { prisma } from "@/app/lib/prisma";
+import {
+  type ChainVotingEvent,
+  fetchChainEvent,
+} from "@/lib/contracts/voting-system";
 
 type EventStatus = "live" | "upcoming" | "completed";
 
-async function getEvents() {
+async function getBaseEvents() {
   return prisma.event.findMany({
     orderBy: { createdAt: "desc" },
     include: {
@@ -34,7 +32,26 @@ async function getEvents() {
   });
 }
 
-type EventWithRelations = Awaited<ReturnType<typeof getEvents>>[number];
+type PrismaEventWithRelations = Awaited<ReturnType<typeof getBaseEvents>>[number];
+
+type EventWithRelations = PrismaEventWithRelations & {
+  chainEvent: ChainVotingEvent | null;
+};
+
+async function getEvents(): Promise<EventWithRelations[]> {
+  const baseEvents = await getBaseEvents();
+  return Promise.all(
+    baseEvents.map(async (event) => {
+      let chainEvent: ChainVotingEvent | null = null;
+      if (event.chainEventId) {
+        chainEvent = await fetchChainEvent(event.chainEventId);
+      } else if (event.blockAddress) {
+        chainEvent = await fetchChainEvent(event.id);
+      }
+      return { ...event, chainEvent };
+    })
+  );
+}
 
 type EventCardData = {
   id: number;
@@ -85,13 +102,21 @@ function isLikelyImageUrl(value: string) {
 }
 
 function mapEventToCard(event: EventWithRelations, now: Date): EventCardData {
-  const startTime = new Date(event.startTime);
-  const endTime = new Date(event.endTime);
+  const chainEvent = event.chainEvent;
+  const startTime = chainEvent
+    ? new Date(chainEvent.startTime * 1000)
+    : new Date(event.startTime);
+  const endTime = chainEvent
+    ? new Date(chainEvent.endTime * 1000)
+    : new Date(event.endTime);
   const hasStarted = startTime <= now;
-  const hasEnded = endTime <= now;
+  const revealDeadline = chainEvent
+    ? new Date(chainEvent.revealDeadline * 1000)
+    : endTime;
+  const hasEnded = revealDeadline <= now || event.isCompleted;
 
   let status: EventStatus;
-  if (hasEnded || event.isCompleted) {
+  if (hasEnded) {
     status = "completed";
   } else if (!hasStarted) {
     status = "upcoming";
@@ -112,6 +137,14 @@ function mapEventToCard(event: EventWithRelations, now: Date): EventCardData {
   const rawImage = event.imgUrl?.trim() ?? "";
   const imageUrl = rawImage && isLikelyImageUrl(rawImage) ? rawImage : null;
 
+  const totalVotes = chainEvent
+    ? chainEvent.totalVotes
+    : Math.max(event.totalVotes, event.votes.length);
+
+  const candidatesCount = chainEvent?.candidateIds?.length
+    ? Number(chainEvent.candidateIds.length)
+    : Math.max(event.candidatesCount, event.candidates.length);
+
   return {
     id: event.id,
     title: event.name,
@@ -119,8 +152,8 @@ function mapEventToCard(event: EventWithRelations, now: Date): EventCardData {
     status,
     countdownLabel,
     countdownValue,
-    totalVotes: Math.max(event.totalVotes, event.votes.length),
-    candidatesCount: Math.max(event.candidatesCount, event.candidates.length),
+    totalVotes,
+    candidatesCount,
     imageUrl,
     winner: event.winner,
     isOwner: event.isOwner,
@@ -146,7 +179,7 @@ const statusStyles: Record<
     panelGlow: "from-emerald-500/15 to-cyan-400/10",
     backgroundGradient: "from-emerald-500/25 via-emerald-400/10 to-cyan-500/10",
     buttonClass:
-      "bg-gradient-to-r from-emerald-500/80 to-cyan-500/70 text-white hover:from-emerald-400/80 hover:to-cyan-400/70",
+      "bg-linear-to-r from-emerald-500/80 to-cyan-500/70 text-white hover:from-emerald-400/80 hover:to-cyan-400/70",
     icon: Flame,
     fillColor: "currentColor",
   },
@@ -157,7 +190,7 @@ const statusStyles: Record<
     panelGlow: "from-cyan-500/15 to-emerald-400/10",
     backgroundGradient: "from-cyan-500/20 via-sky-500/10 to-emerald-500/10",
     buttonClass:
-      "bg-gradient-to-r from-cyan-500/80 to-sky-500/70 text-white hover:from-cyan-400/80 hover:to-sky-400/70",
+      "bg-linear-to-r from-cyan-500/80 to-sky-500/70 text-white hover:from-cyan-400/80 hover:to-sky-400/70",
     icon: CalendarClock,
   },
   completed: {
@@ -167,7 +200,7 @@ const statusStyles: Record<
     panelGlow: "from-amber-400/15 to-emerald-400/10",
     backgroundGradient: "from-amber-500/20 via-emerald-500/10 to-slate-700/20",
     buttonClass:
-      "bg-gradient-to-r from-amber-400/80 to-emerald-500/70 text-white hover:from-amber-300/80 hover:to-emerald-400/70",
+      "bg-linear-to-r from-amber-400/80 to-emerald-500/70 text-white hover:from-amber-300/80 hover:to-emerald-400/70",
     icon: Trophy,
   },
 };
@@ -222,10 +255,10 @@ function EventCard({ event }: { event: EventCardData }) {
 
   return (
     <div
-      className={`group relative overflow-hidden rounded-3xl border border-white/15 bg-gradient-to-br ${status.backgroundGradient} p-8 backdrop-blur-3xl transition-all duration-500 hover:-translate-y-1.5 hover:border-white/25 hover:shadow-[0_36px_80px_rgba(15,118,110,0.32)]`}
+      className={`group relative overflow-hidden rounded-3xl border border-white/15 bg-linear-to-br ${status.backgroundGradient} p-8 backdrop-blur-3xl transition-all duration-500 hover:-translate-y-1.5 hover:border-white/25 hover:shadow-[0_36px_80px_rgba(15,118,110,0.32)]`}
     >
       <div
-        className={`pointer-events-none absolute inset-0 rounded-3xl bg-gradient-to-br ${status.panelGlow} opacity-0 transition-opacity duration-500 group-hover:opacity-100`}
+        className={`pointer-events-none absolute inset-0 rounded-3xl bg-linear-to-br ${status.panelGlow} opacity-0 transition-opacity duration-500 group-hover:opacity-100`}
       ></div>
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.3),transparent_55%),radial-gradient(circle_at_bottom,rgba(15,118,110,0.3),transparent_65%)] opacity-60"></div>
 
@@ -238,10 +271,10 @@ function EventCard({ event }: { event: EventCardData }) {
               className="h-4 w-4"
               fill={status.fillColor ? status.fillColor : "transparent"}
             />
-            <span className="!font-bold">{status.label}</span>
+            <span className="font-bold!">{status.label}</span>
           </span>
           <div className="relative flex h-28 w-28 items-center justify-center overflow-hidden rounded-[28px] border border-white/25 bg-white/20 shadow-[0_20px_60px_rgba(15,118,110,0.35)] backdrop-blur-2xl transition-all duration-500 group-hover:scale-105">
-            <div className="absolute inset-0 bg-gradient-to-br from-white/60 via-transparent to-white/10 opacity-80 mix-blend-screen"></div>
+            <div className="absolute inset-0 bg-linear-to-br from-white/60 via-transparent to-white/10 opacity-80 mix-blend-screen"></div>
             <ImageWithFallback
               src={event.imageUrl}
               alt={`${event.title} visual`}
@@ -263,7 +296,7 @@ function EventCard({ event }: { event: EventCardData }) {
           {/* <p className="max-w-sm text-sm text-white/75">{event.description}</p> */}
         </div>
 
-        <div className="h-px w-full bg-gradient-to-r from-white/35 via-white/10 to-transparent"></div>
+        <div className="h-px w-full bg-linear-to-r from-white/35 via-white/10 to-transparent"></div>
 
         <div className="relative w-full overflow-hidden rounded-2xl">
           <div className="relative grid divide-y divide-white/10 sm:grid-cols-3 sm:divide-y-0 sm:divide-x sm:divide-white/10">
@@ -325,7 +358,7 @@ function EventCard({ event }: { event: EventCardData }) {
           <div className="ml-auto">
             <Link
               href={`/events/${event.id}`}
-              className="inline-flex items-center gap-1 rounded-full px-5 py-2 text-[11px] font-semibold uppercase transition-all duration-300 bg-gradient-to-r from-black/50 to-emerald-950 text-white hover:bg-gradient-to-r hover:from-black/80 hover:to-emerald-900/80 cursor-pointer group"
+              className="inline-flex items-center gap-1 rounded-full px-5 py-2 text-[11px] font-semibold uppercase transition-all duration-300 bg-linear-to-r from-black/50 to-emerald-950 text-white hover:bg-linear-to-r hover:from-black/80 hover:to-emerald-900/80 cursor-pointer group"
             >
               {actionLabel}
               <ChevronRight className="h-4 w-4 group-hover:translate-x-1 transition-transform duration-300" />
@@ -355,11 +388,13 @@ export default async function Home() {
       return b.id - a.id;
     });
 
+  // Your events section shows only events you own
   const yourEvents = cards.filter((event) => event.isOwner);
-  const discoverEvents = cards.filter((event) => !event.isOwner);
+  // Discover section shows all events (including your events)
+  const discoverEvents = cards;
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-black via-emerald-950 to-black pt-20">
+    <div className="relative min-h-screen overflow-hidden bg-linear-to-br from-black via-emerald-950 to-black pt-20">
       <div
         className="pointer-events-none fixed inset-0"
         style={{
@@ -385,7 +420,7 @@ export default async function Home() {
 
       <main className="relative z-10 mx-auto max-w-7xl px-6 py-12">
         <section className="py-16 text-center">
-          <h1 className="animate-gradient bg-gradient-to-r from-emerald-400 via-cyan-400 to-emerald-400 bg-clip-text text-5xl font-bold text-transparent md:text-6xl">
+          <h1 className="animate-gradient bg-linear-to-r from-emerald-400 via-cyan-400 to-emerald-400 bg-clip-text text-5xl font-bold text-transparent md:text-6xl">
             Absolute Transparency
           </h1>
           <p className="mt-2 text-2xl text-gray-300 md:text-3xl">
@@ -402,17 +437,17 @@ export default async function Home() {
           <div className="mb-16 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Link
               href="/create-event"
-              className="group relative min-w-[220px] cursor-pointer overflow-hidden rounded-full border border-emerald-400/50 bg-gradient-to-r from-emerald-800/70 via-emerald-600/60 to-cyan-500/60 px-9 py-4 text-lg font-semibold text-white shadow-[0_25px_55px_rgba(6,24,16,0.55)] backdrop-blur-2xl transition-all duration-300 hover:-translate-y-0.5 hover:border-emerald-300/70 hover:shadow-[0_35px_70px_rgba(6,24,16,0.65)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70"
+              className="group relative min-w-[220px] cursor-pointer overflow-hidden rounded-full border border-emerald-400/50 bg-linear-to-r from-emerald-800/70 via-emerald-600/60 to-cyan-500/60 px-9 py-4 text-lg font-semibold text-white shadow-[0_25px_55px_rgba(6,24,16,0.55)] backdrop-blur-2xl transition-all duration-300 hover:-translate-y-0.5 hover:border-emerald-300/70 hover:shadow-[0_35px_70px_rgba(6,24,16,0.65)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70"
             >
               <span className="relative z-10">Create Voting</span>
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/25 to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100"></div>
+              <div className="absolute inset-0 bg-linear-to-r from-transparent via-white/25 to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100"></div>
             </Link>
             <Link
               href="#your-events"
               className="group relative min-w-[220px] cursor-pointer overflow-hidden rounded-full border border-white/15 bg-white/5 px-9 py-4 text-lg font-semibold text-white/90 shadow-[0_20px_45px_rgba(2,6,4,0.55)] backdrop-blur-2xl transition-all duration-300 hover:-translate-y-0.5 hover:border-emerald-300/40 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/40"
             >
               <span className="relative z-10 text-white">My Vote</span>
-              <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 opacity-0 transition-opacity duration-500 group-hover:opacity-100"></div>
+              <div className="absolute inset-0 bg-linear-to-r from-white/0 via-white/10 to-white/0 opacity-0 transition-opacity duration-500 group-hover:opacity-100"></div>
             </Link>
           </div>
         </section>
@@ -420,7 +455,7 @@ export default async function Home() {
         <section id="your-events" className="mb-16 scroll-mt-24">
           <div className="mb-6 flex items-center gap-3">
             <h2 className="text-3xl font-bold text-white">Your Event</h2>
-            <div className="h-px flex-1 bg-gradient-to-r from-emerald-500/50 to-transparent"></div>
+            <div className="h-px flex-1 bg-linear-to-r from-emerald-500/50 to-transparent"></div>
           </div>
 
           <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
@@ -436,7 +471,7 @@ export default async function Home() {
               </p>
               <Link
                 href="/create-event"
-                className="inline-flex rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500 px-6 py-3 font-semibold text-white shadow-[12px_12px_32px_rgba(0,0,0,0.35)] transition-all duration-300 hover:shadow-[16px_16px_40px_rgba(0,0,0,0.45)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70"
+                className="inline-flex rounded-full bg-linear-to-r from-emerald-500 to-cyan-500 px-6 py-3 font-semibold text-white shadow-[12px_12px_32px_rgba(0,0,0,0.35)] transition-all duration-300 hover:shadow-[16px_16px_40px_rgba(0,0,0,0.45)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70"
               >
                 Create Your First Event
               </Link>
@@ -447,7 +482,7 @@ export default async function Home() {
         <section className="mb-16">
           <div className="mb-6 flex items-center gap-3">
             <h2 className="text-3xl font-bold text-white">Discover</h2>
-            <div className="h-px flex-1 bg-gradient-to-r from-cyan-500/50 to-transparent"></div>
+            <div className="h-px flex-1 bg-linear-to-r from-cyan-500/50 to-transparent"></div>
           </div>
 
           <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">

@@ -1,6 +1,6 @@
 "use client";
 
-import { PannaProvider } from "panna-sdk";
+import { PannaProvider } from "@panna/sdk";
 import { WalletProvider } from "./wallet-provider";
 import type { ReactNode } from "react";
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 import { extractTokenFromRequest, verifyToken } from "@/app/lib/auth";
 
 const prisma = new PrismaClient();
@@ -63,7 +63,8 @@ export async function GET(
       success: true,
       data: event,
     });
-  } catch (error) {
+  } catch {
+    // Error occurred while fetching event
     return NextResponse.json(
       {
         success: false,
@@ -129,6 +130,7 @@ export async function PUT(
       endTime,
       createdBy,
       blockAddress,
+      chainEventId,
       isActive,
     } = body;
 
@@ -155,12 +157,46 @@ export async function PUT(
       );
     }
 
-    const updateData: any = {};
+    // Build the update data object with proper typing
+    const updateData: Prisma.EventUpdateInput = {};
     if (name !== undefined) updateData.name = name;
     if (description !== undefined) updateData.description = description;
     if (createdBy !== undefined) updateData.createdBy = createdBy;
-    if (blockAddress !== undefined) updateData.blockAddress = blockAddress;
+    if (blockAddress !== undefined) {
+      updateData.blockAddress =
+        typeof blockAddress === "string" && blockAddress.length
+          ? blockAddress
+          : null;
+    }
     if (isActive !== undefined) updateData.isActive = isActive;
+    if (chainEventId !== undefined) {
+      const parsedChainEventId = Number(chainEventId);
+      if (!Number.isInteger(parsedChainEventId) || parsedChainEventId <= 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Invalid chainEventId value",
+          },
+          { status: 400 }
+        );
+      }
+      const duplicate = await prisma.event.findFirst({
+        where: {
+          chainEventId: parsedChainEventId,
+          NOT: { id: eventId },
+        },
+      });
+      if (duplicate) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Another event already uses this chainEventId",
+          },
+          { status: 409 }
+        );
+      }
+      updateData.chainEventId = parsedChainEventId;
+    }
 
     // Handle datetime fields with validation
     if (startTime !== undefined) {
@@ -210,7 +246,8 @@ export async function PUT(
       success: true,
       data: event,
     });
-  } catch (error) {
+  } catch {
+    // Error occurred while updating event
     return NextResponse.json(
       {
         success: false,

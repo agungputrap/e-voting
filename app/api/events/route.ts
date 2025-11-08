@@ -43,6 +43,7 @@ async function createEvent(request: NextRequest, user: JWTPayload) {
       startTime,
       endTime,
       blockAddress,
+      chainEventId,
       isActive = true,
       imgUrl,
     } = body;
@@ -81,6 +82,45 @@ async function createEvent(request: NextRequest, user: JWTPayload) {
       );
     }
 
+    if (chainEventId === undefined || chainEventId === null) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Missing required field: chainEventId",
+        },
+        { status: 400 }
+      );
+    }
+
+    const parsedChainEventId = Number(chainEventId);
+    if (!Number.isInteger(parsedChainEventId) || parsedChainEventId <= 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Invalid chainEventId value",
+        },
+        { status: 400 }
+      );
+    }
+
+    const existingChainEvent = await prisma.event.findFirst({
+      where: { chainEventId: parsedChainEventId },
+    });
+    if (existingChainEvent) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Event already registered on-chain",
+        },
+        { status: 409 }
+      );
+    }
+
+    const normalizedBlockAddress =
+      typeof blockAddress === "string" && blockAddress.length
+        ? blockAddress
+        : null;
+
     const event = await prisma.event.create({
       data: {
         name,
@@ -88,7 +128,8 @@ async function createEvent(request: NextRequest, user: JWTPayload) {
         startTime: startDateTime,
         endTime: endDateTime,
         createdBy: user.walletId, // Use authenticated user's walletId
-        blockAddress: blockAddress || null,
+        chainEventId: parsedChainEventId,
+        blockAddress: normalizedBlockAddress,
         isActive,
         imgUrl: imgUrl,
         isCompleted: false,

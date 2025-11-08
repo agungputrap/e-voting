@@ -20,6 +20,8 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { useWallet } from "@/app/lib/wallet-provider";
+import { createVotingEventOnChain } from "@/lib/contracts/voting-system";
+import { useRouter } from "next/navigation";
 
 type CandidateDraft = {
   id: string;
@@ -29,13 +31,13 @@ type CandidateDraft = {
 
 const defaultCandidates: CandidateDraft[] = [
   {
-    id: "seed-rrq",
-    name: "RRQ Hoshi",
+    id: "seed-candidate-1",
+    name: "Candidate 1",
     avatar: "/logo.png",
   },
   {
-    id: "seed-meta",
-    name: "Meta Legion",
+    id: "seed-candidate-2",
+    name: "Candidate 2",
     avatar: "/logo.png",
   },
 ];
@@ -118,15 +120,21 @@ function CandidateCard({
   onRemove: (id: string) => void;
 }) {
   return (
-    <div className="group flex items-center gap-4 rounded-2xl border border-emerald-500/15 bg-gradient-to-r from-white/10 to-transparent px-4 py-3 text-white/90">
+    <div className="group flex items-center gap-4 rounded-2xl border border-emerald-500/15 bg-linear-to-r from-white/10 to-transparent px-4 py-3 text-white/90">
       <div className="relative h-12 w-12 rounded-2xl border border-white/10 bg-black/40">
-        <Image
-          src={candidate.avatar ?? "/logo.png"}
-          alt={candidate.name}
-          fill
-          sizes="48px"
-          className="rounded-2xl object-cover"
-        />
+        {candidate.avatar ? (
+          <Image
+            src={candidate.avatar}
+            alt={candidate.name}
+            fill
+            sizes="48px"
+            className="rounded-2xl object-cover"
+          />
+        ) : (
+          <div className="flex items-center justify-center h-full w-full">
+            <p className="text-white/50 text-2xl font-medium">{candidate.name.charAt(0)}</p>
+          </div>
+        )}
       </div>
       <div className="flex-1">
         <p className="font-semibold text-white">{candidate.name}</p>
@@ -189,7 +197,7 @@ export default function CreateVote() {
   const { toast } = useToast();
   
   // Use wallet context instead of localStorage
-  const { authToken, isAuthenticated } = useWallet();
+  const { authToken, isAuthenticated, account } = useWallet();
 
   const computedStartTime = useMemo(() => {
     if (!startDay || !startMonth || !startYear) return null;
@@ -209,14 +217,12 @@ export default function CreateVote() {
     return Number.isNaN(date.getTime()) ? null : date.toISOString();
   }, [endDay, endMonth, endYear]);
 
-  const startTimeForSubmission =
-    computedStartTime ?? new Date().toISOString();
-
   const handleValidationError = (copy: string) => {
     setStatusMessage({ type: "error", copy });
     toast({
       variant: "destructive",
       title: "Action required",
+      className: "text-red-100 bg-red-900/50 border-red-700/30",
       description: copy,
     });
   };
@@ -295,6 +301,8 @@ export default function CreateVote() {
     setCandidates((prev) => prev.filter((candidate) => candidate.id !== id));
   };
 
+  const router = useRouter();
+
   const publishVote = async () => {
     setStatusMessage({ type: "idle", copy: null });
     
@@ -315,9 +323,68 @@ export default function CreateVote() {
       );
       return;
     }
+    if (!account) {
+      handleValidationError("Wallet connection missing. Please reconnect and try again.");
+      return;
+    }
+
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const requestedStart = computedStartTime
+      ? new Date(computedStartTime)
+      : new Date();
+    let startSeconds = Math.floor(requestedStart.getTime() / 1000);
+    if (Number.isNaN(startSeconds)) {
+      handleValidationError("Invalid start date selected.");
+      return;
+    }
+
+    const MIN_LEAD_SECONDS = 10;
+    if (startSeconds < nowSeconds + MIN_LEAD_SECONDS) {
+      startSeconds = nowSeconds + MIN_LEAD_SECONDS;
+    }
+
+    const endDate = new Date(computedEndTime);
+    const endSeconds = Math.floor(endDate.getTime() / 1000);
+    if (Number.isNaN(endSeconds)) {
+      handleValidationError("Invalid end date selected.");
+      return;
+    }
+
+    if (endSeconds <= startSeconds) {
+      handleValidationError("End time must be after the start time.");
+      return;
+    }
+
+    const startTimeForSubmission = new Date(startSeconds * 1000).toISOString();
+    const endTimeForSubmission = new Date(endSeconds * 1000).toISOString();
 
     setIsPublishing(true);
     try {
+      toast({
+        title: "Confirm transaction",
+        description: "Approve the on-chain event creation in your wallet.",
+      });
+
+      setStatusMessage({
+        type: "idle",
+        copy: "Waiting for on-chain confirmation...",
+      });
+
+      const onChainResult = await createVotingEventOnChain({
+        account,
+        name: title.trim(),
+        description: description.trim(),
+        startTime: startSeconds,
+        endTime: endSeconds,
+      });
+
+      toast({
+        title: "Event registered on-chain",
+        description: `Event ID #${onChainResult.eventId} • tx ${onChainResult.txHash.slice(0, 10)}…`,
+      });
+
+      router.push('/')
+
       // Create the event using the wallet auth token
       const eventResponse = await fetch("/api/events", {
         method: "POST",
@@ -329,7 +396,9 @@ export default function CreateVote() {
           name: title.trim(),
           description: description.trim(),
           startTime: startTimeForSubmission,
-          endTime: computedEndTime,
+          endTime: endTimeForSubmission,
+          chainEventId: onChainResult.eventId,
+          blockAddress: onChainResult.txHash,
           imgUrl: eventCover,
         }),
       });
@@ -376,7 +445,7 @@ export default function CreateVote() {
       } else {
         setStatusMessage({
           type: "success",
-          copy: "Event created and candidates registered on-chain.",
+          copy: "Event created on-chain and synced with the dashboard.",
         });
         setTitle("");
         setDescription("");
@@ -403,7 +472,7 @@ export default function CreateVote() {
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-black via-emerald-950 to-black pt-24 pb-20">
+    <div className="relative min-h-screen overflow-hidden bg-linear-to-br from-black via-emerald-950 to-black pt-24 pb-20">
       <div
         className="pointer-events-none fixed inset-0"
         style={{
@@ -433,7 +502,7 @@ export default function CreateVote() {
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.8)]" />
             On-chain Creation Flow
           </p>
-          <h1 className="mt-5 bg-gradient-to-r from-emerald-400 via-cyan-400 to-emerald-400 bg-clip-text text-4xl font-bold text-transparent sm:text-5xl">
+          <h1 className="mt-5 bg-linear-to-r from-emerald-400 via-cyan-400 to-emerald-400 bg-clip-text text-4xl font-bold text-transparent sm:text-5xl">
             Create Vote
           </h1>
           <p className="mt-3 text-base text-white/70 sm:text-lg">
@@ -553,7 +622,7 @@ export default function CreateVote() {
               )}
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 via-transparent to-white/0 p-6">
+            <div className="rounded-2xl border border-white/10 bg-linear-to-br from-white/5 via-transparent to-white/0 p-6">
               <FieldLabel title="End Vote" hint="UTC" />
               <div className="mt-4 grid gap-3 sm:grid-cols-3">
                 <DateSelectField
@@ -659,7 +728,7 @@ export default function CreateVote() {
           type="button"
           onClick={publishVote}
           disabled={isPublishing}
-          className="mx-auto w-max rounded-full border border-emerald-500/40 bg-gradient-to-r from-cyan-900/50 to-emerald-800/80 px-24 py-5 text-center text-lg font-semibold text-white shadow-[0_25px_55px_rgba(6,24,16,0.55)] transition hover:shadow-[0_35px_70px_rgba(6,24,16,0.65)] disabled:cursor-not-allowed disabled:opacity-70 cursor-pointer"
+          className="mx-auto w-max rounded-full border border-emerald-500/40 bg-linear-to-r from-cyan-900/50 to-emerald-800/80 px-24 py-5 text-center text-lg font-semibold text-white shadow-[0_25px_55px_rgba(6,24,16,0.55)] transition hover:shadow-[0_35px_70px_rgba(6,24,16,0.65)] disabled:cursor-not-allowed disabled:opacity-70 cursor-pointer"
         >
           {isPublishing ? (
             <span className="inline-flex items-center gap-2">

@@ -5,12 +5,16 @@ import {
   useContext,
   useEffect,
   useState,
+  useCallback,
+  useMemo,
   type ReactNode,
 } from "react";
-import { useActiveAccount } from "panna-sdk";
+import { useActiveAccount, type Account } from "@panna/sdk";
 
 // Define the shape of our wallet context
 interface WalletContextType {
+  // The Panna SDK account object (needed for on-chain transactions)
+  account: Account | null;
   // The current auth token (JWT)
   authToken: string | null;
   // The connected wallet address
@@ -66,7 +70,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
    * 2. Calls the backend /api/auth/register endpoint
    * 3. Stores the returned JWT token
    */
-  const register = async (name: string) => {
+  const register = useCallback(async (name: string) => {
     if (!walletAddress) {
       throw new Error("No wallet connected");
     }
@@ -103,7 +107,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [walletAddress]);
 
   /**
    * Login function that:
@@ -112,7 +116,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
    * 3. Stores the returned JWT token
    * 4. If login fails with "not found", automatically tries to register
    */
-  const login = async () => {
+  const login = useCallback(async () => {
     if (!walletAddress) {
       throw new Error("No wallet connected");
     }
@@ -134,7 +138,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
       // If wallet not found, automatically register
       if (response.status === 404) {
-        console.log("Wallet not registered, auto-registering...");
         // Auto-register with a default name
         await register(`User ${walletAddress.slice(0, 6)}`);
         return;
@@ -156,14 +159,14 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [walletAddress, register]);
 
   /**
    * Logout function that:
    * 1. Calls the backend /api/auth/logout endpoint to blacklist the token
    * 2. Clears the local auth token
    */
-  const logout = async () => {
+  const logout = useCallback(async () => {
     if (!authToken) {
       return;
     }
@@ -188,7 +191,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [authToken]);
 
   /**
    * Auto-login when wallet is connected
@@ -203,7 +206,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         // If auto-login fails, the user may need to register first
       });
     }
-  }, [walletAddress, authToken, isLoading]);
+  }, [walletAddress, authToken, isLoading, login]);
 
   /**
    * Clear auth token when wallet disconnects
@@ -214,16 +217,21 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }
   }, [walletAddress, authToken]);
 
-  // Provide the context value to children
-  const value: WalletContextType = {
-    authToken,
-    walletAddress,
-    isAuthenticated,
-    isLoading,
-    login,
-    register,
-    logout,
-  };
+  // Provide the context value to children (memoized to avoid re-renders)
+  // @ts-expect-error - TypeScript cache issue with Account vs Wallet type
+  const value: WalletContextType = useMemo(
+    () => ({
+      account: account ?? null,
+      authToken,
+      walletAddress,
+      isAuthenticated,
+      isLoading,
+      login,
+      register,
+      logout,
+    }),
+    [account, authToken, walletAddress, isAuthenticated, isLoading, login, register, logout]
+  );
 
   return (
     <WalletContext.Provider value={value}>{children}</WalletContext.Provider>
@@ -264,4 +272,3 @@ export function useWallet(): WalletContextType {
   
   return context;
 }
-

@@ -1,0 +1,170 @@
+export const votingSystemAbi = [
+{
+  type: "function",
+  name: "createEvent",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "name", type: "string" },
+      { name: "description", type: "string" },
+      { name: "startTime", type: "uint256" },
+      { name: "endTime", type: "uint256" },
+      { name: "revealDuration", type: "uint256" },
+    ],
+    outputs: [{ name: "eventId", type: "uint256" }],
+  },
+  {
+    type: "event",
+    name: "EventCreated",
+    inputs: [
+      { name: "eventId", type: "uint256", indexed: true },
+      { name: "name", type: "string", indexed: false },
+      { name: "creator", type: "address", indexed: true },
+      { name: "startTime", type: "uint256", indexed: false },
+      { name: "endTime", type: "uint256", indexed: false },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "function",
+    name: "getEvent",
+    stateMutability: "view",
+    inputs: [{ name: "eventId", type: "uint256" }],
+    outputs: [
+      {
+        name: "eventData",
+        type: "tuple",
+        components: [
+          { name: "id", type: "uint256" },
+          { name: "name", type: "string" },
+          { name: "description", type: "string" },
+          { name: "creator", type: "address" },
+          { name: "startTime", type: "uint256" },
+          { name: "endTime", type: "uint256" },
+          { name: "revealDeadline", type: "uint256" },
+          { name: "isActive", type: "bool" },
+          { name: "totalVotes", type: "uint256" },
+          { name: "candidateIds", type: "uint256[]" },
+        ],
+      },
+    ],
+  },
+  {
+    type: "function",
+    name: "getEventCandidates",
+    stateMutability: "view",
+    inputs: [{ name: "eventId", type: "uint256" }],
+    outputs: [
+      {
+        name: "candidates",
+        type: "tuple[]",
+        components: [
+          { name: "id", type: "uint256" },
+          { name: "name", type: "string" },
+          { name: "eventId", type: "uint256" },
+          { name: "voteCount", type: "uint256" },
+          { name: "exists", type: "bool" },
+        ],
+      },
+    ],
+  },
+  {
+    type: "function",
+    name: "getResults",
+    stateMutability: "view",
+    inputs: [{ name: "eventId", type: "uint256" }],
+    outputs: [
+      { name: "candidateIds", type: "uint256[]" },
+      { name: "voteCounts", type: "uint256[]" },
+    ],
+  },
+  {
+    type: "function",
+    name: "getWinner",
+    stateMutability: "view",
+    inputs: [{ name: "eventId", type: "uint256" }],
+    outputs: [
+      { name: "winnerId", type: "uint256" },
+      { name: "winnerName", type: "string" },
+      { name: "winnerVotes", type: "uint256" },
+    ],
+  },
+  {
+    type: "function",
+    name: "voteTokenCost",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "amount", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "hasCommitted",
+    stateMutability: "view",
+    inputs: [
+      { name: "voter", type: "address" },
+      { name: "eventId", type: "uint256" },
+    ],
+    outputs: [{ name: "committed", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "hasRevealed",
+    stateMutability: "view",
+    inputs: [
+      { name: "voter", type: "address" },
+      { name: "eventId", type: "uint256" },
+    ],
+    outputs: [{ name: "revealed", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "getCommit",
+    stateMutability: "view",
+    inputs: [
+      { name: "voter", type: "address" },
+      { name: "eventId", type: "uint256" },
+    ],
+    outputs: [
+      { name: "commitHash", type: "bytes32" },
+      { name: "timestamp", type: "uint256" },
+      { name: "revealed", type: "bool" },
+    ],
+  },
+  {
+    type: "function",
+    name: "commitVote",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "eventId", type: "uint256" },
+      { name: "commitHash", type: "bytes32" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "revealVote",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "eventId", type: "uint256" },
+      { name: "candidateId", type: "uint256" },
+      { name: "secret", type: "bytes32" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "hasClaimedNFT",
+    stateMutability: "view",
+    inputs: [
+      { name: "voter", type: "address" },
+      { name: "eventId", type: "uint256" },
+    ],
+    outputs: [{ name: "claimed", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "claimNFTBadge",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "eventId", type: "uint256" }],
+    outputs: [],
+  },
+] as const;

@@ -19,7 +19,11 @@ export default function ImageWithFallback({
 
   if (!src || hasError) {
     if (fallback) {
-      return <>{fallback}</>;
+      return (
+        <div className="flex h-full w-full items-center justify-center text-center">
+          {fallback}
+        </div>
+      );
     }
     return (
       <div className="flex h-full w-full items-center justify-center rounded-2xl bg-white/10 text-xs uppercase tracking-[0.2em] text-white/60">
@@ -44,4 +48,3 @@ export default function ImageWithFallback({
     />
   );
 }
-
