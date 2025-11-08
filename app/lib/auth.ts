@@ -37,6 +37,21 @@ export function generateToken(payload: {
     JWT_SECRET,
     signOptions
   );
+export function generateToken(payload: { userId: number; walletId: string}): string {
+    // Generate a unique JWT ID for blacklist tracking
+    const jti = `${payload.userId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    return jwt.sign(
+        { 
+            userId: payload.userId,
+            walletId: payload.walletId,
+            jti 
+        },
+        process.env.JWT_SECRET as string,
+        { 
+            expiresIn: process.env.JWT_EXPIRES_IN || '7d'
+        } as jwt.SignOptions
+    );
 }
 
 export async function verifyToken(token: string): Promise<JWTPayload> {
