@@ -95,6 +95,7 @@ export function CandidateVotePanel({
     walletAddress,
     isAuthenticated,
     login,
+    authToken,
   } = useWallet();
 
   const [candidates, setCandidates] = useState(initialCandidates);
@@ -314,6 +315,33 @@ export function CandidateVotePanel({
         candidateId,
         secret,
       });
+
+      // Save vote to database after successful blockchain commit
+      try {
+        const response = await fetch('/api/votes', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(authToken && { Authorization: `Bearer ${authToken}` }),
+          },
+          body: JSON.stringify({
+            eventId: eventId,
+            candidateId: candidateId,
+            blockAddress: txHash || `0x${Math.random().toString(16).substring(2, 42).padStart(40, '0')}`
+          }),
+        });
+
+        const data = await response.json();
+        
+        if (response.ok) {
+          console.log('Vote committed and saved to database successfully:', data.data);
+        } else {
+          console.error('Failed to save vote to database:', data.error);
+        }
+      } catch (dbError) {
+        console.error('Database save error after commit:', dbError);
+        // Don't throw error here to avoid breaking the flow - blockchain commit is already done
+      }
 
       persistSecret(secret);
       setHasCommitted(true);
